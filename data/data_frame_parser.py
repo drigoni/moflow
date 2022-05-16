@@ -97,6 +97,7 @@ class DataFrameParser(object):
                 try:
                     mol = Chem.MolFromSmiles(smiles)
                     if mol is None:
+                        print('Error, smiles to mol failed: {}'.format(smiles))
                         fail_count += 1
                         if return_is_successful:
                             is_successful_list.append(False)
@@ -162,6 +163,8 @@ class DataFrameParser(object):
             result = tuple(ret)
             logger.info('Preprocess finished. FAIL {}, SUCCESS {}, TOTAL {}'
                         .format(fail_count, success_count, total_count))
+            print('Preprocess finished. FAIL {}, SUCCESS {}, TOTAL {}'
+                        .format(fail_count, success_count, total_count))
         else:
             raise NotImplementedError
 
@@ -170,16 +173,7 @@ class DataFrameParser(object):
             is_successful = numpy.array(is_successful_list)
         else:
             is_successful = None
-
-        # if isinstance(result, tuple):
-        #     if self.postprocess_fn is not None:
-        #         result = self.postprocess_fn(*result)
-        #     dataset = NumpyTupleDataset(*result)
-        # else:
-        #     if self.postprocess_fn is not None:
-        #         result = self.postprocess_fn(result)
-        #     dataset = NumpyTupleDataset(result)
-
+            
         if isinstance(result, (tuple, list)):
             if self.postprocess_fn is not None:
                 result = self.postprocess_fn(*result)

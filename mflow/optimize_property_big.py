@@ -774,7 +774,7 @@ if __name__ == '__main__':
         train_prop = [prop_list[i] for i in train_idx]
         test_prop = [prop_list[i] for i in valid_idx]
         print('Prepare data done! Time {:.2f} seconds'.format(time.time() - start))
-        property_model_path = os.path.join(args.model_dir, '{}_model.pt'.format(property_name))
+        property_model_path = os.path.join(args.model_dir, '{}_big_model.pt'.format(property_name))
         property_model = fit_model(property_model, atomic_num_list, train_dataloader, train_prop, device,
                                    property_name=property_name, max_epochs=args.max_epochs,
                                    learning_rate=args.learning_rate, weight_decay=args.weight_decay)

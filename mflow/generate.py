@@ -17,8 +17,9 @@ from rdkit.Chem import Draw, AllChem
 from rdkit import Chem
 from rdkit import Chem, DataStructs
 
-from data import transform_qm9, transform_zinc250k
+from data import transform_qm9, transform_zinc250k, transform_cancer
 from data.transform_zinc250k import zinc250_atomic_num_list, transform_fn_zinc250k
+from data.transform_cancer import cancer_atomic_num_list, transform_fn_cancer
 from mflow.models.hyperparams import Hyperparameters
 from mflow.models.utils import check_validity, adj_to_smiles, check_novelty, valid_mol, construct_mol, _to_numpy_array, correct_mol,valid_mol_can_with_seg
 from mflow.utils.model_utils import load_model, get_latent_vec
@@ -391,7 +392,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_dir", type=str, default='./results')
     parser.add_argument("--data_dir", type=str, default='../data')
-    parser.add_argument('--data_name', type=str, default='qm9', choices=['qm9', 'zinc250k'], help='dataset name')
+    parser.add_argument('--data_name', type=str, default='qm9', choices=['qm9', 'zinc250k', 'cancer'], help='dataset name')
     # parser.add_argument('--molecule_file', type=str, default='qm9_relgcn_kekulized_ggnp.npz',
     #                     help='path to molecule dataset')
     parser.add_argument("--snapshot-path", "-snapshot", type=str, required=True)
@@ -458,6 +459,11 @@ if __name__ == "__main__":
         # true_data = TransformDataset(true_data, transform_fn_zinc250k)
         valid_idx = transform_zinc250k.get_val_ids()
         molecule_file = 'zinc250k_relgcn_kekulized_ggnp.npz'
+    elif args.data_name == 'cancer':
+        atomic_num_list = cancer_atomic_num_list
+        transform_fn = transform_cancer.transform_fn_cancer
+        valid_idx = transform_cancer.get_val_ids()
+        molecule_file = 'cancer_relgcn_kekulized_ggnp.npz'
 
     batch_size = args.batch_size
     dataset = NumpyTupleDataset.load(os.path.join(args.data_dir, molecule_file), transform=transform_fn)

@@ -180,7 +180,7 @@ def check_valency(mol):
 
 
 def correct_mol(x):
-    xsm = Chem.MolToSmiles(x, isomericSmiles=True)
+    # xsm = Chem.MolToSmiles(x, isomericSmiles=True)
     mol = x
     while True:
         flag, atomid_valence = check_valency(mol)
@@ -289,8 +289,76 @@ def check_validity(adj, x, atomic_num_list, gpu=-1, return_unique=True,
     results['valid_ratio'] = valid_ratio*100
     results['unique_ratio'] = unique_ratio*100
     results['abs_unique_ratio'] = abs_unique_ratio * 100
-
     return results
+    
+
+def check_cancer_validity(adj, x, properties, atomic_num_list, gpu=-1, return_unique=True,
+                   correct_validity=True, largest_connected_comp=True, debug=True):
+    """
+    :param adj:  (100,4,9,9)
+    :param x: (100.9,5)
+    :param atomic_num_list: [6,7,8,9,0]
+    :param gpu:  e.g. gpu0
+    :param return_unique:
+    :return:
+    """
+    adj = _to_numpy_array(adj)  # , gpu)  (1000,4,9,9)
+    x = _to_numpy_array(x)  # , gpu)  (1000,9,5)
+    properties = _to_numpy_array(properties)
+    if correct_validity:
+        # valid = [valid_mol_can_with_seg(construct_mol_with_validation(x_elem, adj_elem, atomic_num_list)) # valid_mol_can_with_seg
+        #          for x_elem, adj_elem in zip(x, adj)]
+        valid = []
+        for x_elem, adj_elem in zip(x, adj):
+            mol = construct_mol(x_elem, adj_elem, atomic_num_list)
+            # Chem.Kekulize(mol, clearAromaticFlags=True)
+            cmol = correct_mol(mol)
+            vcmol = valid_mol_can_with_seg(cmol, largest_connected_comp=largest_connected_comp)   #  valid_mol_can_with_seg(cmol)  # valid_mol(cmol)  # valid_mol_can_with_seg
+            # Chem.Kekulize(vcmol, clearAromaticFlags=True)
+            valid.append(vcmol)
+    else:
+        valid = [valid_mol(construct_mol(x_elem, adj_elem, atomic_num_list))
+             for x_elem, adj_elem in zip(x, adj)]   #len()=1000
+    valid_properties = [p for mol, p in zip(valid, properties) if mol is not None]
+    valid = [mol for mol in valid if mol is not None]  #len()=valid number, say 794
+    assert len(valid) == len(valid_properties)
+    if debug:
+        print("valid molecules: {}/{}".format(len(valid), adj.shape[0]))
+        for i, mol in enumerate(valid):
+            print("[{}] {}".format(i, Chem.MolToSmiles(mol, isomericSmiles=False)))
+
+    n_mols = x.shape[0]
+    valid_ratio = len(valid)/n_mols  # say 794/1000
+    valid_smiles = [Chem.MolToSmiles(mol, isomericSmiles=False) for mol in valid]
+    unique_smiles = []
+    unique_properties = []
+    for smi, smi_prop in zip(valid_smiles, valid_properties): 
+        if smi not in unique_smiles:
+            unique_smiles.append(smi)
+            unique_properties.append(smi_prop)
+    valid_properties = unique_properties
+    # unique_smiles = list(set(valid_smiles))  # unique valid, say 788
+    unique_ratio = 0.
+    if len(valid) > 0:
+        unique_ratio = len(unique_smiles)/len(valid)  # say 788/794
+    if return_unique:
+        valid_smiles = unique_smiles
+    valid_mols = [Chem.MolFromSmiles(s) for s in valid_smiles]
+    abs_unique_ratio = len(unique_smiles)/n_mols
+    if debug:
+        print("valid: {:.3f}%, unique: {:.3f}%, abs unique: {:.3f}%".
+            format(valid_ratio * 100, unique_ratio * 100, abs_unique_ratio * 100))
+    assert len(valid_mols) == len(valid_smiles)
+    assert len(valid_smiles) == len(valid_properties)
+    results = dict()
+    results['valid_mols'] = valid_mols
+    results['valid_smiles'] = valid_smiles
+    results['valid_properties'] = valid_properties
+    results['valid_ratio'] = valid_ratio*100
+    results['unique_ratio'] = unique_ratio*100
+    results['abs_unique_ratio'] = abs_unique_ratio * 100
+    return results
+    
 
 
 def check_novelty(gen_smiles, train_smiles, n_generated_mols): # gen: say 788, train: 120803

@@ -25,7 +25,7 @@ def get_parser():
     parser = argparse.ArgumentParser()
     # data I/O
     parser.add_argument('-i', '--data_dir', type=str, default='../data', help='Location for the dataset')
-    parser.add_argument('--data_name', type=str, default='qm9', choices=['qm9', 'zinc250k'], help='dataset name')
+    parser.add_argument('--data_name', type=str, default='qm9', choices=['qm9', 'zinc250k', 'cancer'], help='dataset name')
     # parser.add_argument('-f', '--data_file', type=str, default='qm9_relgcn_kekulized_ggnp.npz', help='Name of the dataset')
     parser.add_argument('-o', '--save_dir', type=str, default='results/qm9',
                         help='Location for parameter checkpoints and samples')
@@ -130,10 +130,22 @@ def train():
         # mlp_channels = [1024, 512]
         # gnn_channels = {'gcn': [16, 128], 'hidden': [256, 64]}
         b_n_type = 4
-        b_n_squeeze = 19   # 2
+        b_n_squeeze = 19  # 2
         a_n_node = 38
         a_n_type = len(atomic_num_list)  # 10
         valid_idx = transform_zinc250k.get_val_ids()
+    elif args.data_name == 'cancer':
+        from data import transform_cancer
+        data_file = 'cancer_relgcn_kekulized_ggnp.npz'
+        transform_fn = transform_cancer.transform_fn_cancer
+        atomic_num_list = transform_cancer.cancer_atomic_num_list
+        # mlp_channels = [1024, 512]
+        # gnn_channels = {'gcn': [16, 128], 'hidden': [256, 64]}
+        b_n_type = 4
+        b_n_squeeze = 14  # 2
+        a_n_node = 70
+        a_n_type = len(atomic_num_list)  # 43
+        valid_idx = transform_cancer.get_val_ids()
     else:
         raise ValueError('Only support qm9 and zinc250k right now. '
                          'Parameters need change a little bit for other dataset.')
@@ -222,6 +234,10 @@ def train():
             else:
                 nll = model.log_prob(z, sum_log_det_jacs)
             loss = nll[0] + nll[1]
+            # TODO drigoni: print
+            # print("sum_log_det_jacs:", sum_log_det_jacs)
+            # print("nll[0]:", nll[0])
+            # print("nll[1]:", nll[1])
             loss.backward()
             optimizer.step()
             tr.update()

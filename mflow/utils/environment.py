@@ -13,6 +13,7 @@ import random
 import time
 #import matplotlib.pyplot as plt
 import csv
+from openbabel import pybel
 
 from contextlib import contextmanager
 import sys, os
@@ -113,6 +114,70 @@ def calculate_min_plogp(mol):
     final_p = min(p1, p2)
     final_p = min(final_p, p3)
     return final_p
+
+
+def calculate_mol_energy(molecule, force_field='uff'):
+    """
+    Get a force field for a molecule.
+
+    Parameters
+    ----------
+    molecule : RDKit Mol
+        Molecule.
+    force_field: type of force field [uff, mmff, mmff94s]
+    """
+    # according to: https://sourceforge.net/p/rdkit/mailman/message/28670793/
+    # according to: https://rdkit-discuss.narkive.com/SGca7i9Y/uff-energy-question-s
+    m = copy.deepcopy(molecule)
+    # necessary to add Hs and add coordinates
+    m = Chem.AddHs(m)
+    AllChem.EmbedMolecule(m)
+    if force_field == 'uff':
+        try:
+            ff = AllChem.UFFGetMoleculeForceField(m)
+        except:
+            raise ValueError("Not a valid ff: {}.".format(Chem.MolToSmiles(m, isomericSmiles=True)))
+    elif force_field.startswith('mmff'):
+        AllChem.MMFFSanitizeMolecule(m)
+        if AllChem.MMFFHasAllMoleculeParams(m):
+            mmff_props = AllChem.MMFFGetMoleculeProperties(m, mmffVariant=force_field)
+            ff = AllChem.MMFFGetMoleculeForceField(m, mmff_props)
+        else:
+            raise ValueError("Unrecognized atom type.")
+    else:
+        raise ValueError("Invalid force_field: {}.".format(force_field))
+    # ff.Minimize()     # ???
+    energy = ff.CalcEnergy()
+    # print("Energy: ", energy)
+    return energy
+#def calculate_mol_energy(smi):
+#    mol = pybel.readstring("smi", smi)
+#    # print("Mol: ", mol)
+#    # print("Energy: ", mol.energy)
+#    energy = mol.energy
+#    return energy
+
+
+def calculate_mol_wt(mol):
+    molwt = Chem.Descriptors.ExactMolWt(mol)
+    return molwt
+# function in pyBel that give similar risults to rdkit
+#def calculate_mol_wt(smi):
+#    mol = pybel.readstring("smi", smi)
+#    # print("Molwt: ", mol.molwt)
+#    molwt = mol.molwt
+#    return molwt
+
+
+def calculate_mol_charge(mol):
+    charge = Chem.rdmolops.GetFormalCharge(mol)
+    # print("Charge: ", charge)
+    return charge
+#def calculate_mol_charge(smi):
+#    mol = pybel.readstring("smi", smi)
+#    # print("Charge: ", mol.charge)
+#    charge = mol.charge
+#    return charge
 
 
 def penalized_logp(mol):

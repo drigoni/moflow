@@ -1,0 +1,10 @@
+*.pth
+*.pt
+*.err
+*.out
+*.zip
+*.npz
+*__pycache__*
+
+mflow/results/*
+.vscode

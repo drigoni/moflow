@@ -70,7 +70,7 @@ class MoFlowProp(nn.Module):
         return output, h,  sum_log_det_jacs
 
 
-def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='qed',
+def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device, property_name='eff',
               max_epochs=10, learning_rate=1e-3, weight_decay=1e-5):
     start = time.time()
     print("Start at Time: {}".format(time.ctime()))
@@ -80,9 +80,10 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='q
     metrics = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    N = len(data.dataset)
-    assert len(data_prop) == N
-    iter_per_epoch = len(data)
+    assert len(train_prop) == len(train_dataloader.dataset)
+    assert len(valid_prop) == len(valid_dataloader.dataset)
+
+    iter_per_epoch = len(train_dataloader)
     log_step = 20
     # batch_size = data.batch_size
     tr = TimeReport(total_iter = max_epochs * iter_per_epoch)
@@ -94,15 +95,16 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='q
         raise ValueError("Wrong property_name{}".format(property_name))
 
     for epoch in range(max_epochs):
-        print("In epoch {}, Time: {}".format(epoch + 1, time.ctime()))
-        for i, batch in enumerate(data):
+        print("Training epoch {}, Time: {}".format(epoch + 1, time.ctime()))
+        model.train()
+        for i, batch in enumerate(train_dataloader):
             x = batch[0].to(device)   # (bs,9,5)
             adj = batch[1].to(device)   # (bs,4,9, 9)
             bs = x.shape[0]
 
             ps = i * bs
-            pe = min((i+1)*bs, N)
-            true_y = [[tt[col]] for tt in data_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
+            pe = min((i+1)*bs, len(train_dataloader.dataset))
+            true_y = [[tt[col]] for tt in train_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
             true_y = torch.tensor(true_y).float().cuda()
             # model and loss
             optimizer.zero_grad()
@@ -120,7 +122,25 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='q
                              loss.item(),
                              tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
-            # How to validate??? set aside validation data and cal and print the loss
+        
+        print("Valid epoch {}, Time: {}".format(epoch + 1, time.ctime()))
+        valid_loss=0
+        model.eval()
+        for i, batch in enumerate(valid_dataloader):
+            x = batch[0].to(device)   # (bs,9,5)
+            adj = batch[1].to(device)   # (bs,4,9, 9)
+            bs = x.shape[0]
+            ps = i * bs
+            pe = min((i+1)*bs, len(valid_dataloader.dataset))
+            true_y = [[tt[col]] for tt in valid_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
+            true_y = torch.tensor(true_y).float().cuda()
+            # model and loss
+            optimizer.zero_grad()
+            y, z, sum_log_det_jacs = model(adj, x)
+            loss = metrics(y, true_y)
+            valid_loss += loss.item()
+            # Print log info
+        print('Valid loss: {:.7f} .'.format(valid_loss/len(valid_dataloader)))
     tr.print_summary()
     tr.end()
     print("[fit_model Ends], Start at {}, End at {}, Total {}".
@@ -762,9 +782,10 @@ if __name__ == '__main__':
     train_idx = [t for t in range(len(dataset)) if t not in valid_idx]  # 224568 = 249455 - 24887
     n_train = len(train_idx)  # 120803 zinc: 224568
     train = torch.utils.data.Subset(dataset, train_idx)  # 120803 # cancer: 69619
-    test = torch.utils.data.Subset(dataset, valid_idx)  # 13082  not used for generation
+    valid = torch.utils.data.Subset(dataset, valid_idx)  # 13082  not used for generation
 
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=args.batch_size)
+    valid_dataloader = torch.utils.data.DataLoader(valid, batch_size=args.batch_size)
 
     # print("loading hyperparamaters from {}".format(hyperparams_path))
 
@@ -772,10 +793,10 @@ if __name__ == '__main__':
         print("Training regression model over molecular embedding:")
         prop_list = load_property_csv(args.data_name, normalize=True)
         train_prop = [prop_list[i] for i in train_idx]
-        test_prop = [prop_list[i] for i in valid_idx]
+        valid_prop = [prop_list[i] for i in valid_idx]
         print('Prepare data done! Time {:.2f} seconds'.format(time.time() - start))
         property_model_path = os.path.join(args.model_dir, '{}_big_model.pt'.format(property_name))
-        property_model = fit_model(property_model, atomic_num_list, train_dataloader, train_prop, device,
+        property_model = fit_model(property_model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device,
                                    property_name=property_name, max_epochs=args.max_epochs,
                                    learning_rate=args.learning_rate, weight_decay=args.weight_decay)
         print("saving {} regression model to: {}".format(property_name, property_model_path))

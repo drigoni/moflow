@@ -69,7 +69,7 @@ class MoFlowProp(nn.Module):
         return output, h,  sum_log_det_jacs
 
 
-def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='eff',
+def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device, property_name='eff',
               max_epochs=10, learning_rate=1e-3, weight_decay=1e-5):
     start = time.time()
     print("Start at Time: {}".format(time.ctime()))
@@ -78,10 +78,10 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='e
     # Loss and optimizer
     metrics = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    assert len(train_prop) == len(train_dataloader.dataset)
+    assert len(valid_prop) == len(valid_dataloader.dataset)
 
-    N = len(data.dataset)
-    assert len(data_prop) == N
-    iter_per_epoch = len(data)
+    iter_per_epoch = len(train_dataloader)
     log_step = 20
     # batch_size = data.batch_size
     tr = TimeReport(total_iter = max_epochs * iter_per_epoch)
@@ -93,15 +93,16 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='e
         raise ValueError("Wrong property_name {}".format(property_name))
 
     for epoch in range(max_epochs):
-        print("In epoch {}, Time: {}".format(epoch + 1, time.ctime()))
-        for i, batch in enumerate(data):
+        print("Training epoch {}, Time: {}".format(epoch + 1, time.ctime()))
+        model.train()
+        for i, batch in enumerate(train_dataloader):
             x = batch[0].to(device)   # (bs,9,5)
             adj = batch[1].to(device)   # (bs,4,9, 9)
             bs = x.shape[0]
 
             ps = i * bs
-            pe = min((i+1)*bs, N)
-            true_y = [[tt[col]] for tt in data_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
+            pe = min((i+1)*bs, len(train_dataloader.dataset))
+            true_y = [[tt[col]] for tt in train_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
             true_y = torch.tensor(true_y).float().cuda()
             # model and loss
             optimizer.zero_grad()
@@ -115,10 +116,30 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='e
             # Print log info
             if (i + 1) % log_step == 0:  # i % args.log_step == 0:
                 print('Epoch [{}/{}], Iter [{}/{}], loss: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
-                      format(epoch + 1, args.max_epochs, i + 1, iter_per_epoch,
+                      format(epoch + 1, max_epochs, i + 1, iter_per_epoch,
                              loss.item(),
                              tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
+        
+        print("Valid epoch {}, Time: {}".format(epoch + 1, time.ctime()))
+        model.eval()
+        valid_loss = 0
+        for i, batch in enumerate(valid_dataloader):
+            x = batch[0].to(device)   # (bs,9,5)
+            adj = batch[1].to(device)   # (bs,4,9, 9)
+            bs = x.shape[0]
+
+            ps = i * bs
+            pe = min((i+1)*bs, len(valid_dataloader.dataset))
+            true_y = [[tt[col]] for tt in valid_prop[ps:pe]]  #[[propf(mol)] for mol in true_mols]
+            true_y = torch.tensor(true_y).float().cuda()
+            # model and loss
+            optimizer.zero_grad()
+            y, z, sum_log_det_jacs = model(adj, x)
+            loss = metrics(y, true_y)
+            valid_loss += loss.item() * bs
+            # Print log info
+        print('Valid loss: {:.7f} .'.format(valid_loss/len(valid_dataloader)))
     tr.print_summary()
     tr.end()
     print("[fit_model Ends], Start at {}, End at {}, Total {}".
@@ -127,10 +148,10 @@ def fit_model(model, atomic_num_list, data, data_prop,  device, property_name='e
 
 def _normalize(df, col_name):
     if col_name == 'energy':
-        df[col_name] = df[col_name].replace('None', 1000)
+        df[col_name] = df[col_name].replace('None', 4000)
         # df[col_name] = df[col_name].fillna(1000)
         df[col_name] = pd.to_numeric(df[col_name])
-        df[col_name] = df[col_name].clip(lower=0, upper=1000)
+        df[col_name] = df[col_name].clip(lower=0, upper=4000)
         m = df[col_name].mean()
         mn = df[col_name].min()
         mx = df[col_name].max()
@@ -180,7 +201,7 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cu
             reverse_smiles = adj_to_smiles(adj_rev.cpu(), x_rev.cpu(), atomic_num_list)
             print(smiles, reverse_smiles)
 
-            adj_normalized = rescale_adj(bond).to(device)
+            optimize_moladj_normalized = rescale_adj(bond).to(device)
             z, sum_log_det_jacs = model(bond, atoms, adj_normalized)
             z0 = z[0].reshape(z[0].shape[0], -1)
             z1 = z[1].reshape(z[1].shape[0], -1)
@@ -211,7 +232,7 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cu
         # cur_vec = cur_vec.data + lr * grad.data
         if random:
             rad = torch.randn_like(cur_vec.data)
-            cur_vec = start_vec.data + lr * rad / torch.sqrt(rad * rad)
+            optimize_molcur_vec = start_vec.data + lr * rad / torch.sqrt(rad * rad)
         else:
             cur_vec = cur_vec.data + lr * grad.data / torch.sqrt(grad.data * grad.data)
         cur_vec = cur_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(cur_vec, requires_grad=True).to(mol_vec)
@@ -260,9 +281,13 @@ def find_top_score_smiles(model, device, data_name, property_name, train_prop, t
         if i % 50 == 0:
             print('Optimization {}/{}, time: {:.2f} seconds'.format(i, topk, time.time() - start_time))
         qed, plogp, smile = r
-        results, ori = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100,
+        try:
+            results, ori = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100,
                                       data_name=data_name, atomic_num_list=atomic_num_list,
                                       property_name=property_name, random=False, debug=debug)
+        except:
+            print("Exceptions with the molecule: {}. See if it encodes all its atoms. Skipping the molecule. ".format(smile))
+            continue
         result_list.extend(results)  # results: [(smile2, property, sim, smile1, prop), ...]
 
     result_list.sort(key=lambda tup: tup[1], reverse=True)
@@ -291,6 +316,139 @@ def find_top_score_smiles(model, device, data_name, property_name, train_prop, t
     f.close()
     print('Dump done!')
 
+
+def find_top_score_smiles_eff_energy(model, eff_model, energy_model, device, train_prop, topk, atomic_num_list, model_dir):
+    start_time = time.time()
+    eff_col = 0
+    en_col = 1
+    print('Finding top eff scores. ')
+    train_prop_sorted = sorted(train_prop, key=lambda tup: tup[0], reverse=True)
+    result_list = []
+    for i, r in enumerate(train_prop_sorted):
+        if i >= topk:
+            break
+        if i % 50 == 0:
+            print('Optimization {}/{}, time: {:.2f} seconds'.format(i, topk, time.time() - start_time))
+        _, _, smile = r
+        try:    
+            results, _ = optimize_mol_eff_energy(model, eff_model, energy_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100, atomic_num_list=atomic_num_list)
+            if results is None:
+                continue
+        except:
+            print("Exceptions with the molecule: {}. See if it encodes all its atoms. Skipping the molecule. ".format(smile))
+            continue
+        result_list.extend(results)
+
+    result_list.sort(key=lambda tup: tup[1], reverse=True)
+
+    # check novelty
+    train_smile = set()
+    for i, r in enumerate(train_prop_sorted):
+        qed, plogp, smile = r
+        train_smile.add(smile)
+        mol = Chem.MolFromSmiles(smile)
+        smile2 = Chem.MolToSmiles(mol, isomericSmiles=True)
+        train_smile.add(smile2)
+
+    result_list_novel = []
+    for i, r in enumerate(result_list):
+        smile, score, sim, smile_original, prop = r
+        if smile not in train_smile:
+            result_list_novel.append(r)
+
+    # dump results
+    f = open(model_dir + '/cancer_eff_energy_discovered_sorted.csv', "w")
+    for r in result_list_novel:
+        smile, score, sim, smile_original, prop = r
+        f.write('{},{},{},{},{}\n'.format(score, smile, sim, smile_original, prop))
+        f.flush()
+    f.close()
+    print('Dump done!')
+
+
+def optimize_mol_eff_energy(model:MoFlow, eff_model:MoFlowProp, energy_model:MoFlowProp, smiles, device, sim_cutoff, lr=2.0, num_iter=20,
+            atomic_num_list=[6, 7, 8, 9, 0]):
+    eff_propf = lambda: 1000
+    energy_propf = env.calculate_mol_energy
+    model.eval()
+    eff_model.eval()
+    energy_model.eval()
+    with torch.no_grad():
+        bond, atoms = smiles_to_adj(smiles, 'cancer')
+        bond = bond.to(device)
+        atoms = atoms.to(device)
+        mol_vec, _ = eff_model.encode(bond, atoms)
+
+    mol = Chem.MolFromSmiles(smiles)
+    fp1 = AllChem.GetMorganFingerprint(mol, 2)
+    try:
+        start_eff_score = eff_propf(mol)
+    except:
+        start_eff_score = 1000
+    try:
+        start_energy_score = energy_propf(mol)
+    except:
+        start_energy_score = 1000
+    start = (smiles, start_eff_score, start_energy_score, None)
+
+    cur_vec = mol_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(mol_vec, requires_grad=True).to(mol_vec)
+    visited = []
+    visited_eff_prop = []
+    visited_energy_prop = []
+    for step in range(num_iter):
+        eff_prop_val = eff_model.propNN(cur_vec).squeeze()
+        energy_prop_val = energy_model.propNN(cur_vec).squeeze()
+        eff_grad = torch.autograd.grad(eff_prop_val, cur_vec)[0]
+        energy_grad = torch.autograd.grad(energy_prop_val, cur_vec)[0]
+        energy_grad = -energy_grad  # due to minimization
+        # calculate projection
+        project_mult = torch.sum(torch.mul(eff_grad.data, energy_grad.data), dim=-1)
+        if project_mult > 0:
+            if project_mult < 1:
+                # angle <= 90 -> find projection
+                proj = project_mult / torch.sum(torch.mul(eff_grad.data, eff_grad.data), dim=-1)  # final projection
+                proj = proj * eff_grad.data  # final projection
+            else:
+                proj = eff_grad.data
+        else:
+            return None, None
+        # cur_vec = cur_vec.data + lr * grad.data
+        # cur_vec = cur_vec.data + lr * proj.data / torch.sqrt(grad.data * grad.data)
+
+        cur_vec = cur_vec.data + lr * proj / torch.sqrt(proj * proj)
+        cur_vec = cur_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(cur_vec, requires_grad=True).to(mol_vec)
+        visited.append(cur_vec)
+        eff_prop = eff_model.propNN(cur_vec).squeeze()
+        energy_prop = energy_model.propNN(cur_vec).squeeze()
+        visited_eff_prop.append(eff_prop)
+        visited_energy_prop.append(energy_prop)
+
+    hidden_z = torch.cat(visited, dim=0).to(device)
+    visited_prop_cat_eff = torch.FloatTensor(visited_eff_prop).to(device)
+    visited_prop_cat_energy = torch.FloatTensor(visited_energy_prop).to(device)
+    adj, x = property_model.reverse(hidden_z)
+    val_res = check_cancer_validity(adj, x, visited_prop_cat_eff, atomic_num_list, debug=False)
+    valid_mols = val_res['valid_mols']
+    valid_smiles = val_res['valid_smiles']
+    valid_properties = val_res['valid_properties']
+    results = []
+    sm_set = set()
+    sm_set.add(smiles)
+    for m, s, s_prop in zip(valid_mols, valid_smiles, valid_properties):
+        if s in sm_set:
+            continue
+        sm_set.add(s)
+        try:
+            p = eff_propf(m)
+        except:
+            p = 1000
+        fp2 = AllChem.GetMorganFingerprint(m, 2)
+        sim = DataStructs.TanimotoSimilarity(fp1, fp2)
+        if sim >= sim_cutoff:
+            results.append((s, p, sim, smiles, s_prop))
+    # smile, property, similarity, mol
+    results.sort(key=lambda tup: tup[1], reverse=True)
+    return results, start
 
 def constrain_optimization_smiles(model, device, data_name, property_name, train_prop, topk,
                                   atomic_num_list, debug, model_dir, sim_cutoff=0.0):
@@ -373,6 +531,7 @@ if __name__ == '__main__':
     #
     parser.add_argument('--topscore', action='store_true', default=False, help='To find top score')
     parser.add_argument('--consopt', action='store_true', default=False, help='To do constrained optimization')
+    parser.add_argument('--eff_energy', action='store_true', default=False, help='To maximize eff and minimize energy')
 
     args = parser.parse_args()
 
@@ -412,9 +571,10 @@ if __name__ == '__main__':
     train_idx = [t for t in range(len(dataset)) if t not in valid_idx]  # 224568 = 249455 - 24887
     n_train = len(train_idx)  # 120803 zinc: 224568
     train = torch.utils.data.Subset(dataset, train_idx)  # 120803
-    test = torch.utils.data.Subset(dataset, valid_idx)  # 13082  not used for generation
+    valid = torch.utils.data.Subset(dataset, valid_idx)  # 13082  not used for generation
 
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=args.batch_size)
+    valid_dataloader = torch.utils.data.DataLoader(valid, batch_size=args.batch_size)
 
     # print("loading hyperparamaters from {}".format(hyperparams_path))
 
@@ -422,41 +582,62 @@ if __name__ == '__main__':
         print("Training regression model over molecular embedding:")
         prop_list = load_property_csv(normalize=True)
         train_prop = [prop_list[i] for i in train_idx]
-        test_prop = [prop_list[i] for i in valid_idx]
+        valid_prop = [prop_list[i] for i in valid_idx]
         print('Prepare data done! Time {:.2f} seconds'.format(time.time() - start))
         property_model_path = os.path.join(args.model_dir, '{}_big_model.pt'.format(property_name))
-        property_model = fit_model(property_model, atomic_num_list, train_dataloader, train_prop, device,
+        property_model = fit_model(property_model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device,
                                    property_name=property_name, max_epochs=args.max_epochs,
                                    learning_rate=args.learning_rate, weight_decay=args.weight_decay)
         print("saving {} regression model to: {}".format(property_name, property_model_path))
         torch.save(property_model, property_model_path)
         print('Train and save model done! Time {:.2f} seconds'.format(time.time() - start))
     else:
-        print("Loading trained regression model for optimization")
         prop_list = load_property_csv(normalize=False)
         train_prop = [prop_list[i] for i in train_idx]
-        test_prop = [prop_list[i] for i in valid_idx]
+        valid_prop = [prop_list[i] for i in valid_idx]
         print('Prepare data done! Time {:.2f} seconds'.format(time.time() - start))
-        property_model_path = os.path.join(args.model_dir, args.property_model_path)
-        print("loading {} regression model from: {}".format(property_name, property_model_path))
-        device = torch.device('cpu')
-        property_model = torch.load(property_model_path, map_location=device)
-        print('Load model done! Time {:.2f} seconds'.format(time.time() - start))
+        if args.eff_energy:
+            print('Maximize eff and minimize energy')
+            print("Loading trained regression model for optimization")
+            device = torch.device('cpu')
+            eff_model_name = 'eff_big_model.pt'
+            eff_model_path = os.path.join(args.model_dir, eff_model_name)
+            eff_model = torch.load(eff_model_path, map_location=device)
+            eff_model.to(device)
+            eff_model.eval()
+            print("loading {} regression model from: {}".format('eff', eff_model_name))
+            energy_model_name = 'energy_big_model.pt'
+            energy_model_path = os.path.join(args.model_dir, energy_model_name)
+            energy_model = torch.load(energy_model_path, map_location=device)
+            energy_model.to(device)
+            energy_model.eval()
+            print("loading {} regression model from: {}".format('energy', energy_model_name))
+            print('Load models done! Time {:.2f} seconds'.format(time.time() - start))
 
-        property_model.to(device)
-        property_model.eval()
+            model.to(device)
+            model.eval()
 
-        model.to(device)
-        model.eval()
+            find_top_score_smiles_eff_energy(model, eff_model, energy_model, device, train_prop, args.topk, atomic_num_list, args.model_dir)
+        else:
+            print("Loading trained regression model for optimization")
+            property_model_path = os.path.join(args.model_dir, args.property_model_path)
+            print("loading {} regression model from: {}".format(property_name, property_model_path))
+            device = torch.device('cpu')
+            property_model = torch.load(property_model_path, map_location=device)
+            print('Load model done! Time {:.2f} seconds'.format(time.time() - start))
+            property_model.to(device)
+            property_model.eval()
+            model.to(device)
+            model.eval()
 
-        if args.topscore:
-            print('Finding top score:')
-            find_top_score_smiles(model, device, args.data_name, property_name, train_prop, args.topk, atomic_num_list, args.debug, args.model_dir)
+            if args.topscore:
+                print('Finding top score:')
+                find_top_score_smiles(model, device, args.data_name, property_name, train_prop, args.topk, atomic_num_list, args.debug, args.model_dir)
 
-        if args.consopt:
-            print('Constrained optimization:')
-            constrain_optimization_smiles(model, device, args.data_name, property_name, train_prop, args.topk,   # train_prop
-                                      atomic_num_list, args.debug, args.model_dir, sim_cutoff=args.sim_cutoff)
+            if args.consopt:
+                print('Constrained optimization:')
+                constrain_optimization_smiles(model, device, args.data_name, property_name, train_prop, args.topk,   # train_prop
+                                        atomic_num_list, args.debug, args.model_dir, sim_cutoff=args.sim_cutoff)
 
         print('Total Time {:.2f} seconds'.format(time.time() - start))
 

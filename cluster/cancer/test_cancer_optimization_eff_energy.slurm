@@ -2,11 +2,11 @@
 ### Owner: Davide Rigoni
 
 ### ============ SLURM COMMANDS
-#SBATCH --job-name='MoFlow-test-cancer-optimization-eff'
+#SBATCH --job-name='MoFlow-test-cancer-optimization-eff-energy'
 #SBATCH --mail-user=drigoni@math.unipd.it 		## user's email
-#SBATCH --error=MoFlow-test-cancer-optimization-eff.err
-#SBATCH --output=MoFlow-test-cancer-optimization-eff.out
-#SBATCH --partition=allgroups
+#SBATCH --error=MoFlow-test-cancer-optimization-eff-energy.err
+#SBATCH --output=MoFlow-test-cancer-optimization-eff-energy.out
+#SBATCH --partition=testing
 #SBATCH --ntasks=3
 #SBATCH --exclusive								### cores
 #SBATCH --exclusive								### cores
@@ -37,7 +37,7 @@ cd $progPath
 # input config file for the script
 CMD=$1
 
-python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  --hyperparams_path moflow-params.json --batch_size 256 --model_dir results/cancer26   --gpu 0   --data_name cancer   --property_name eff --topk 2000  --property_model_path eff_big_model.pt --debug false  --topscore
+python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  --hyperparams_path moflow-params.json --batch_size 256 --model_dir results/cancer26  --property_model_path eff_big_model.pt --gpu 0  --topk 2000  --eff_energy
 
 
 # last default print

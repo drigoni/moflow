@@ -50,7 +50,7 @@ def cancer_smiles_csv_to_properties(smiles, eff):
             bad_eff = -1
             bad_energy = -999
             results.append((qed, plogp, bad_eff, bad_energy, smile))
-            f.write('{},{},{}\n'.format(qed, plogp, smile))
+            f.write('{},{},{},{},{}\n'.format(qed, plogp, bad_eff, bad_energy, smile))
             continue
 
         try:
@@ -80,17 +80,8 @@ def cancer_smiles_csv_to_properties(smiles, eff):
         f.flush()
     f.close()
 
-    results.sort(key=lambda tup: tup[0], reverse=True)
-    f = open('cancer_property_sorted_qed.csv', "w")  #
-    f.write('qed,plogp,eff,energy,smile\n')
-    for r in results:
-        qed, plogp, eff, energy,smile = r
-        f.write('{},{},{},{},{}\n'.format(qed, plogp, eff, energy, smile))
-        f.flush()
-    f.close()
-
-    results.sort(key=lambda tup: tup[1], reverse=True)
-    f = open('cancer_property_sorted_plogp.csv', "w")  #
+    results.sort(key=lambda tup: tup[2], reverse=True)
+    f = open('cancer_property_sorted_eff.csv', "w")  #
     f.write('qed,plogp,eff,energy,smile\n')
     for r in results:
         qed, plogp, eff, energy,smile = r

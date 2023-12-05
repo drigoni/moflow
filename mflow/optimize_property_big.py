@@ -70,7 +70,7 @@ class MoFlowProp(nn.Module):
         return output, h,  sum_log_det_jacs
 
 
-def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device, property_name='eff',
+def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_dataloader, valid_prop, device, property_name='GI50',
               max_epochs=10, learning_rate=1e-3, weight_decay=1e-5):
     start = time.time()
     print("Start at Time: {}".format(time.ctime()))
@@ -343,8 +343,7 @@ def load_property_csv(data_name, normalize=True):
 
     df = pd.read_csv(filename)  # qed, plogp, smile
     if data_name == 'cancer':
-        df = df.drop("energy", axis=1)
-        df = df.drop("eff", axis=1)
+        df = df.drop(['AVERAGE_GI50', 'AVERAGE_LC50', 'AVERAGE_IC50', 'AVERAGE_TGI', 'energy'], axis=1)
     if normalize:
         # plogp: # [-62.52, 4.52]
         m = df['plogp'].mean()  # 0.00026
@@ -715,7 +714,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--delta", type=float, default=0.01)
     parser.add_argument("--img_format", type=str, default='svg')
-    parser.add_argument("--property_name", type=str, default='eff', choices=['qed', 'plogp'])
+    parser.add_argument("--property_name", type=str, default='qed', choices=['qed', 'plogp'])
     parser.add_argument('--additive_transformations', type=strtobool, default=False,
                         help='apply only additive coupling layers')
     parser.add_argument('--temperature', type=float, default=1.0,

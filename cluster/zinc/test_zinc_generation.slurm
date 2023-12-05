@@ -29,7 +29,7 @@ echo ''
 # default paths'
 SHAREDIR="/conf/shared-software/Singularity/CUDA/"
 envPath="${HOME}/Programs/miniconda/envs/moflow/bin"
-progPath="${HOME}/repository/moflow/mflow/"
+progPath="${HOME}/repository/ProgettoCancro-moflow/mflow/"
 cd $progPath
 
 # input config file for the script

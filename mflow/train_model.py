@@ -142,15 +142,15 @@ def train():
         # mlp_channels = [1024, 512]
         # gnn_channels = {'gcn': [16, 128], 'hidden': [256, 64]}
         b_n_type = 4
-        b_n_squeeze = 14  # 2
-        a_n_node = 70
-        a_n_type = len(atomic_num_list)  # 43
+        b_n_squeeze = 16  # 2
+        a_n_node = 80
+        a_n_type = len(atomic_num_list)
         valid_idx = transform_cancer.get_val_ids()
     else:
         raise ValueError('Only support qm9 and zinc250k right now. '
                          'Parameters need change a little bit for other dataset.')
 
-    model_params = Hyperparameters(b_n_type=b_n_type,  # 4,
+    model_params = Hyperparameters(b_n_type=b_n_type, 
                                    b_n_flow=args.b_n_flow,
                                    b_n_block=args.b_n_block,
                                    b_n_squeeze=b_n_squeeze,
@@ -187,7 +187,6 @@ def train():
     dataset = NumpyTupleDataset.load(os.path.join(args.data_dir, data_file), transform=transform_fn)  # 133885
     if len(valid_idx) > 0:
         train_idx = [t for t in range(len(dataset)) if t not in valid_idx]  # 120803 = 133885-13082
-        # n_train = len(train_idx)  # 120803
         train = torch.utils.data.Subset(dataset, train_idx)  # 120,803
         test = torch.utils.data.Subset(dataset, valid_idx)  # 13,082
     else:

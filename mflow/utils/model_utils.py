@@ -29,7 +29,7 @@ def smiles_to_adj(mol_smiles, data_name='qm9'):
         out_size = 38
         transform_fn = transform_fn_zinc250k
     elif data_name == 'cancer':
-        out_size = 70
+        out_size = 80
         transform_fn = transform_fn_cancer
 
     preprocessor = GGNNPreprocessor(out_size=out_size, kekulize=True)

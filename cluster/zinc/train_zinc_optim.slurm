@@ -33,7 +33,7 @@ echo ''
 SHAREDIR="/conf/shared-software/Singularity/CUDA/"
 NODE_NAME="dellsrv1"
 envPath="${HOME}/Programs/miniconda/envs/moflow/bin"
-progPath="${HOME}/repository/moflow/mflow/"
+progPath="${HOME}/repository/ProgettoCancro-moflow/mflow/"
 cd $progPath
 
 # input config file for the script

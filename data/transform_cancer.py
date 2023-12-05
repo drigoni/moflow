@@ -2,11 +2,11 @@ import json
 
 import numpy as np
 
-#                         B, C, O, N, F, Na, Al, Si, P , S , Cl, Ti, V , Cr, Mn, Fe, Co, Cu, Zn, Ga, Ge, As, Se, Br, Zr, Nb, Mo, Pd, In, Sn, Sb, Te, I , Ce, Sm, Hf, W , Re, Os, Pt, Hg, Tl, Pb, Bi, Fr, Ac, Th, Am,
-cancer_atomic_num_list = [5, 6, 7, 8, 9, 11, 13, 14, 15, 16, 17, 22, 23, 24, 25, 26, 27, 29, 30, 31, 32, 33, 34, 35, 40, 41, 42, 46, 49, 50, 51, 52, 53, 58, 62, 72, 74, 75, 76, 78, 80, 81, 82, 83, 87, 89, 90, 95, 0]  # 0 is for virtual node.
+#                         H, Li,B, C, O, N, F, Na, Mg, Al, Si, P , S , Cl, K , Ca, Ti, V , Cr, Mn, Fe, Co, Ni, Cu, Zn, Ga, Ge, As, Se, Br, Zr, Nb, Mo, Ru, Rh, Pd, Ag, Cd, In, Sn, Sb, Te, I , Ba, La, Ce, Nd, Sm, Gd, Dy, Hf, Ta, W , Re, Os, Lr, Pt, Au, Hg, Tl, Pb, Bi, Fr, Ac, Th, Am,
+cancer_atomic_num_list = [1, 3, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 19, 20, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 56, 57, 58, 60, 62, 64, 66, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 87, 89, 90, 95, 0]  # 0 is for virtual node.
 
 
-def one_hot_cancer(data, out_size=70):
+def one_hot_cancer(data, out_size=80):
     num_max_id = len(cancer_atomic_num_list)
     assert data.shape[0] == out_size
     b = np.zeros((out_size, num_max_id), dtype=np.float32)

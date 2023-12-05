@@ -2,17 +2,17 @@
 ### Owner: Davide Rigoni
 
 ### ============ SLURM COMMANDS
-#SBATCH --job-name='MoFlow-generation-cancer'
+#SBATCH --job-name='MoFlow-cancer-preprocessing'
 #SBATCH --mail-user=davide.rigoni.1@unipd.it 		## user's email
-#SBATCH --output=./cluster/out/MoFlow-generation-cancer_v2.out
+#SBATCH --output=./cluster/out/MoFlow-cancer_v2_preprocessing.out
 #SBATCH --partition=allgroups,testing
 #SBATCH --nodes=1                                   # node count
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
-#SBATCH --cpus-per-task=16		                    # cpu-cores per task (>1 if multi-threaded tasks)
+#SBATCH --cpus-per-task=8
 #SBATCH --exclusive							
-#SBATCH --mem=50G							
-#SBATCH --time=2-12						
-####SBATCH --gres=gpu:1		
+#SBATCH --mem=28G							
+#SBATCH --time=1-00:00:00						
+
 
 
 ### ============ SOME PRINT COMMANDS
@@ -30,13 +30,11 @@ echo ''
 # default paths'
 SHAREDIR="/conf/shared-software/Singularity/CUDA/"
 envPath="${HOME}/Programs/miniconda/envs/moflow/bin"
-progPath="${HOME}/repository/ProgettoCancro-moflow/mflow/"
+progPath="${HOME}/repository/ProgettoCancro-moflow/data/"
 cd $progPath
 
 # input config file for the script
-CMD=$1
-
-python generate.py --model_dir results/cancer_v2_128_22 -snapshot model_snapshot_epoch_200 --gpu 0 --data_name cancer --hyperparams-path moflow-params.json --batch-size 10000 --temperature 0.85 --delta 0.1 --n_experiments 5 --save_fig false --correct_validity true
+srun python data_preprocess.py --data_name cancer
 
 # last default print
 echo 'Job done.'

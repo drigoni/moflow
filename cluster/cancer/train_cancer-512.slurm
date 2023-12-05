@@ -12,7 +12,7 @@
 ####SBATCH --cpus-per-task=16
 #SBATCH --exclusive							
 #SBATCH --mem=50G							
-#SBATCH --time=2-12						
+#SBATCH --time=2-0						
 #SBATCH --gres=gpu:1						
 #SBATCH --array=0-29%6
 ####SBATCH --array=0

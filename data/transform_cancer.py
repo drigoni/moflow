@@ -3,7 +3,7 @@ import json
 import numpy as np
 
 #                        [H,C,N,O,F,P ,S ,Cl,Se,Br,I ]
-cancer_atomic_num_list = [1,6,7,8,9,15,16,17,34,35,53] 
+cancer_atomic_num_list = [1,6,7,8,9,15,16,17,34,35,53,0] # 0 is for virtual node 
 
 
 def one_hot_cancer(data, out_size=80):

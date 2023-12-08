@@ -7,6 +7,7 @@ import argparse
 from distutils.util import strtobool
 import torch
 import torch.nn as nn
+import wandb
 
 from data.data_loader import NumpyTupleDataset
 from mflow.models.hyperparams import Hyperparameters
@@ -86,6 +87,9 @@ def train():
     print("Start at Time: {}".format(time.ctime()))
     parser = get_parser()
     args = parser.parse_args()
+    # start wandb
+    wandb.login(key='00144985e1d4b5bd78edc47bb88e8fc8bd1f46c0')
+    wandb.init(project="ProgettoCancro-moflow")
 
     # Device configuration
     device = -1
@@ -197,6 +201,8 @@ def train():
 
     train_dataloader = torch.utils.data.DataLoader(train, batch_size=args.batch_size,
                                                    shuffle=args.shuffle, num_workers=args.num_workers)
+    valid_dataloader = torch.utils.data.DataLoader(test, batch_size=args.batch_size,
+                                                   shuffle=args.shuffle, num_workers=args.num_workers)
 
     print('==========================================')
     print('Load data done! Time {:.2f} seconds'.format(time.time() - start))
@@ -214,11 +220,16 @@ def train():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
     # Train the models
-    iter_per_epoch = len(train_dataloader)
+    iter_train_per_epoch = len(train_dataloader)
+    iter_valid_per_epoch = len(valid_dataloader)
     log_step = args.save_interval  # 20 default
-    tr = TimeReport(total_iter=args.max_epochs * iter_per_epoch)
+    tr = TimeReport(total_iter=args.max_epochs * iter_train_per_epoch)
     for epoch in range(args.max_epochs):
         print("In epoch {}, Time: {}".format(epoch+1, time.ctime()))
+
+        # starting training
+        cumulative_values_train = [0, 0, 0, 0]
+        model.train()
         for i, batch in enumerate(train_dataloader):
             optimizer.zero_grad()
             # turn off shuffle to see the order with original code
@@ -233,42 +244,29 @@ def train():
             else:
                 nll = model.log_prob(z, sum_log_det_jacs)
             loss = nll[0] + nll[1]
-            # TODO drigoni: print
-            # print("sum_log_det_jacs:", sum_log_det_jacs)
-            # print("nll[0]:", nll[0])
-            # print("nll[1]:", nll[1])
             loss.backward()
             optimizer.step()
             tr.update()
 
+            # update cumulative vars
+            cumulative_values_train[0] += loss.item() * batch[0].shape[0]
+            cumulative_values_train[1] += nll[0].item() * batch[0].shape[0]
+            cumulative_values_train[2] += nll[1].item() * batch[0].shape[0]
+            cumulative_values_train[3] += int(batch[0].shape[0])
+
             # Print log info
             if (i+1) % log_step == 0:  # i % args.log_step == 0:
-                print('Epoch [{}/{}], Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
+                print('Epoch [{}/{}], Train Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
                       ' nll_adj: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
-                      format(epoch+1, args.max_epochs, i+1, iter_per_epoch,
+                      format(epoch+1, args.max_epochs, i+1, iter_train_per_epoch,
                              loss.item(), nll[0].item(), nll[1].item(),
                              tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
 
-        if debug:
-            def print_validity(ith):
-                model.eval()
-                if multigpu:
-                    adj, x = generate_mols(model.module, batch_size=100, device=device)
-                else:
-                    adj, x = generate_mols(model, batch_size=100, device=device)
-                valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
-                mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
-                os.makedirs(mol_dir, exist_ok=True)
-                for ind, mol in enumerate(valid_mols):
-                    save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
-                model.train()
-            print_validity(epoch+1)
-
         # The same report for each epoch
-        print('Epoch [{}/{}], Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
+        print('Epoch [{}/{}], Train Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
               ' nll_adj: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
-              format(epoch + 1, args.max_epochs, -1, iter_per_epoch,
+              format(epoch + 1, args.max_epochs, -1, iter_train_per_epoch,
                      loss.item(), nll[0].item(), nll[1].item(),
                      tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
         tr.print_summary()
@@ -286,8 +284,71 @@ def train():
                 args.save_dir, 'model_snapshot_epoch_{}'.format(epoch + 1)))
             tr.end()
 
-    print("[Training Ends], Start at {}, End at {}".format(time.ctime(start), time.ctime()))
+        #### starting validation
+        cumulative_values_valid = [0, 0, 0, 0]
+        model.eval()
+        for i, batch in enumerate(valid_dataloader):
+            optimizer.zero_grad()
+            # turn off shuffle to see the order with original code
+            x = batch[0].to(device)  # (256,9,5)
+            adj = batch[1].to(device)  # (256,4,9, 9)
+            adj_normalized = rescale_adj(adj).to(device)
 
+            # Forward, backward and optimize
+            z, sum_log_det_jacs = model(adj, x, adj_normalized)
+            if multigpu:
+                nll = model.module.log_prob(z, sum_log_det_jacs)
+            else:
+                nll = model.log_prob(z, sum_log_det_jacs)
+            loss = nll[0] + nll[1]
+
+            # update cumulative vars
+            cumulative_values_valid[0] += loss.item() * batch[0].shape[0]
+            cumulative_values_valid[1] += nll[0].item() * batch[0].shape[0]
+            cumulative_values_valid[2] += nll[1].item() * batch[0].shape[0]
+            cumulative_values_valid[3] += int(batch[0].shape[0])
+
+            # Print log info
+            if (i+1) % log_step == 0:  # i % args.log_step == 0:
+                print('Epoch [{}/{}], Valid Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
+                      ' nll_adj: {:.5f}'.
+                      format(epoch+1, args.max_epochs, i+1, iter_valid_per_epoch,
+                             loss.item(), nll[0].item(), nll[1].item()))
+                
+        # The same report for each epoch
+        print('Epoch [{}/{}], Valid Iter [{}/{}], loglik: {:.5f}, nll_x: {:.5f},'
+                      ' nll_adj: {:.5f}'.
+                      format(epoch+1, args.max_epochs, -1, iter_valid_per_epoch,
+                             loss.item(), nll[0].item(), nll[1].item()))
+        
+        # start generation
+        if debug:
+            def print_validity(ith):
+                model.eval()
+                if multigpu:
+                    adj, x = generate_mols(model.module, batch_size=100, device=device)
+                else:
+                    adj, x = generate_mols(model, batch_size=100, device=device)
+                valid_mols = check_validity(adj, x, atomic_num_list)['valid_mols']
+                mol_dir = os.path.join(args.save_dir, 'generated_{}'.format(ith))
+                os.makedirs(mol_dir, exist_ok=True)
+                for ind, mol in enumerate(valid_mols):
+                    save_mol_png(mol, os.path.join(mol_dir, '{}.png'.format(ind)))
+                model.train()
+            print_validity(epoch+1)
+
+        wandb.log({"Train loglik": cumulative_values_train[0]/cumulative_values_train[3],
+                   "Train nll_x": cumulative_values_train[1]/cumulative_values_train[3],
+                   "Train nll_adj": cumulative_values_train[2]/cumulative_values_train[3],
+                   "Valid loglik": cumulative_values_valid[0]/cumulative_values_valid[3],
+                   "Valid nll_x": cumulative_values_valid[1]/cumulative_values_valid[3],
+                   "Valid nll_adj": cumulative_values_valid[2]/cumulative_values_valid[3],
+                   })
+
+        
+
+    print("[Training Ends], Start at {}, End at {}".format(time.ctime(start), time.ctime()))
+    wandb.finish()
 
 if __name__ == '__main__':
     # with torch.autograd.set_detect_anomaly(True):

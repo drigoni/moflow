@@ -57,7 +57,7 @@ nvidia-smi
 echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX "
 echo ''
 
-cd "~/repository/ProgettoCancro-moflow/data/"
+cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/data/"
 
 # input config file for the script
 srun python data_preprocess.py --data_name cancer

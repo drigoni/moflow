@@ -15,9 +15,11 @@ from data.data_loader import NumpyTupleDataset
 import pandas as pd
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, Draw
+from mflow.utils.sascorer import calculateScore
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from data import transform_cancer
 from data.transform_cancer import cancer_atomic_num_list, transform_fn_cancer
 # from mflow.generate import generate_mols_along_axis
@@ -32,6 +34,7 @@ from sklearn.linear_model import LinearRegression
 import time
 import functools
 print = functools.partial(print, flush=True)
+
 
 
 class MoFlowProp(nn.Module):
@@ -101,6 +104,7 @@ def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_datalo
 
     best_validation_score = 10^5
     best_model = None
+    training_loss = 0
     for epoch in range(max_epochs):
         print("Training epoch {}, Time: {}".format(epoch + 1, time.ctime()))
         model.train()
@@ -122,6 +126,7 @@ def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_datalo
             loss.backward()
             optimizer.step()
             tr.update()
+            training_loss += loss.item() * bs
             # Print log info
             if (i + 1) % log_step == 0:  # i % args.log_step == 0:
                 print('Epoch [{}/{}], Iter [{}/{}], loss: {:.5f}, {:.2f} sec/iter, {:.2f} iters/sec: '.
@@ -129,6 +134,8 @@ def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_datalo
                              loss.item(),
                              tr.get_avg_time_per_iter(), tr.get_avg_iter_per_sec()))
                 tr.print_summary()
+        mean_train_loss = training_loss/len(train_dataloader.dataset)
+        print('Train loss: {:.7f} .'.format(mean_train_loss))
         
         print("Valid epoch {}, Time: {}".format(epoch + 1, time.ctime()))
         model.eval()
@@ -224,7 +231,7 @@ def load_property_csv(normalize=True, add_clinic=False):
     print('Load {} done, length: {}'.format(filename, len(tuples)))
     return tuples
 
-def find_lower_score_smiles(model, device, data_name, property_name, train_prop, topk, atomic_num_list, debug, model_dir, model_suffix):
+def find_lower_score_smiles(model, property_model, device, data_name, property_name, train_prop, topk, atomic_num_list, debug, model_dir, model_suffix):
     start_time = time.time()
     if property_name == 'AVERAGE_GI50':
         col = 0
@@ -243,11 +250,11 @@ def find_lower_score_smiles(model, device, data_name, property_name, train_prop,
     for i, r in enumerate(train_prop_sorted):
         if i >= topk:
             break
-        if i % 50 == 0:
+        if i % 10 == 0:
             print('Optimization {}/{}, time: {:.2f} seconds'.format(i, topk, time.time() - start_time))
         smile = r[-1] # last column is smile
         try:
-            results, ori = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100, # 100 default
+            results = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100, # 100 default
                                       data_name=data_name, atomic_num_list=atomic_num_list,
                                       property_name=property_name, random=False, debug=debug)
         except:
@@ -258,44 +265,56 @@ def find_lower_score_smiles(model, device, data_name, property_name, train_prop,
     result_list.sort(key=lambda tup: tup[1], reverse=False)
 
     # check novelty
-    train_smile = set()
+    list_of_training_smiles = set()
     for i, r in enumerate(train_prop_sorted):
         smile = r[-1] # last column is smile
-        train_smile.add(smile)
+        list_of_training_smiles.add(smile)
         mol = Chem.MolFromSmiles(smile)
-        smile2 = Chem.MolToSmiles(mol, isomericSmiles=True)
-        train_smile.add(smile2)
+        smile2 = Chem.MolToSmiles(mol)
+        list_of_training_smiles.add(smile2)
 
     result_list_novel = []
     for i, r in enumerate(result_list):
-        smile, score, sim, smile_original, prop = r
-        if smile not in train_smile:
+        smile_new, predicted_property, smiles_original, similarity_score  = r
+        if smile_new not in list_of_training_smiles:
             result_list_novel.append(r)
 
     # dump results
     f = open('{}/{}_{}_discovered_sorted{}.csv'.format(model_dir, data_name, property_name, model_suffix), "w")
+    f.write('{},{},{},{},{},{}\n'.format('New SMILES', 'Predicted Property', 'SAS', 'Weight', 'Original SILES', 'Similarity Score'))
     for r in result_list_novel:
-        smile, score, sim, smile_original, prop = r
-        f.write('{},{},{},{},{}\n'.format(score, smile, sim, smile_original, prop))
+        smile_new, predicted_property, smiles_original, similarity_score  = r= r
+        mol = Chem.MolFromSmiles(smile_new)
+        try:
+            mol_sas_score = calculateScore(mol) # values in [1, 10]
+        except:
+            mol_sas_score = -1
+        try:
+            mol_weight = Chem.Descriptors.MolWt(mol)    # values in [0, inf]
+        except:
+            mol_weight = -1
+        f.write('{},{},{},{},{},{}\n'.format(smile_new, predicted_property, mol_sas_score, mol_weight, smiles_original, similarity_score))
         f.flush()
     f.close()
     print('Dump done!')
 
 
-def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cutoff, lr=2.0, num_iter=20,
+def optimize_mol(model:MoFlow, property_model:MoFlowProp, mol_start_smiles, device, sim_cutoff, lr=2.0, num_iter=20,
              data_name='cancer', atomic_num_list=[6, 7, 8, 9, 0], property_name='AVERAGE_GI50', debug=True, random=False):
-    model.eval()
     property_model.eval()
     with torch.no_grad():
-        bond, atoms = smiles_to_adj(smiles, data_name)
+        bond, atoms = smiles_to_adj(mol_start_smiles, data_name)
         bond = bond.to(device)
         atoms = atoms.to(device)
         mol_vec, sum_log_det_jacs = property_model.encode(bond, atoms)
+
+        # check main model and property model results
         if debug:
+            model.eval()
             adj_rev, x_rev = property_model.reverse(mol_vec)
             reverse_smiles = adj_to_smiles(adj_rev.cpu(), x_rev.cpu(), atomic_num_list)
-            print(smiles, reverse_smiles)
-            optimize_moladj_normalized = rescale_adj(bond).to(device)
+            print(mol_start_smiles, reverse_smiles)
+            optimize_mol, adj_normalized = rescale_adj(bond).to(device)
             z, sum_log_det_jacs = model(bond, atoms, adj_normalized)
             z0 = z[0].reshape(z[0].shape[0], -1)
             z1 = z[1].reshape(z[1].shape[0], -1)
@@ -304,17 +323,12 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cu
             train_smiles2 = adj_to_smiles(bond.cpu(), atoms.cpu(), atomic_num_list)
             print(train_smiles2, reverse_smiles2)
 
-    mol = Chem.MolFromSmiles(smiles)
-    fp1 = AllChem.GetMorganFingerprint(mol, 2)
-    try:
-        start_score = propf(mol)
-    except:
-        start_score = 1000
-    start = (smiles, start_score, None) # , mol)
+    mol_start = Chem.MolFromSmiles(mol_start_smiles)
+    mol_start_fingerprint = AllChem.GetMorganFingerprint(mol_start, 2)
 
+    # optimize the molecule
     cur_vec = mol_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(mol_vec, requires_grad=True).to(mol_vec)
     start_vec = mol_vec.clone().detach().requires_grad_(True).to(device)
-
     visited = []
     visited_prop = []
     for step in range(num_iter):
@@ -322,7 +336,7 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cu
         grad = torch.autograd.grad(prop_val, cur_vec)[0]
         if random:
             rad = torch.randn_like(cur_vec.data)
-            optimize_molcur_vec = start_vec.data - lr * rad / torch.sqrt(rad * rad)
+            cur_vec = cur_vec.data - lr * rad / torch.sqrt(rad * rad)
         else:
             cur_vec = cur_vec.data - lr * grad.data / torch.sqrt(grad.data * grad.data)
         cur_vec = cur_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(cur_vec, requires_grad=True).to(mol_vec)
@@ -330,31 +344,31 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, smiles, device, sim_cu
         prop_val = property_model.propNN(cur_vec).squeeze()
         visited_prop.append(prop_val)
 
+    # get back the molecoles structure
     hidden_z = torch.cat(visited, dim=0).to(device)
     visited_prop_cat = torch.FloatTensor(visited_prop).to(device)
     adj, x = property_model.reverse(hidden_z)
-    val_res = check_cancer_validity(adj, x, visited_prop_cat, atomic_num_list, debug=debug)
+
+    # check validity
+    val_res = check_cancer_validity(adj, x, visited_prop_cat, atomic_num_list, debug=debug, correct_validity=True)
     valid_mols = val_res['valid_mols']
     valid_smiles = val_res['valid_smiles']
     valid_properties = val_res['valid_properties']
+
+    # removing repetitions
     results = []
-    sm_set = set()
-    sm_set.add(smiles)
-    for m, s, s_prop in zip(valid_mols, valid_smiles, valid_properties):
-        if s in sm_set:
+    smiles_set = set()
+    smiles_set.add(mol_start_smiles)
+    for mol_end, mol_end_smiles, mol_end_predicted_prop in zip(valid_mols, valid_smiles, valid_properties):
+        if mol_end_smiles in smiles_set:
             continue
-        sm_set.add(s)
-        try:
-            p = propf(m)
-        except:
-            p = 1000
-        fp2 = AllChem.GetMorganFingerprint(m, 2)
-        sim = DataStructs.TanimotoSimilarity(fp1, fp2)
+        smiles_set.add(mol_end_smiles)
+        mol_end_fingerprint = AllChem.GetMorganFingerprint(mol_end, 2)
+        sim = DataStructs.TanimotoSimilarity(mol_start_fingerprint, mol_end_fingerprint)
         if sim >= sim_cutoff:
-            results.append((s, p, sim, smiles, s_prop))
-    # smile, property, similarity, mol
+            results.append((mol_end_smiles, mol_end_predicted_prop, mol_start_smiles, sim))
     results.sort(key=lambda tup: tup[1], reverse=False)
-    return results, start
+    return results
 
 # --------- optimization using two metrics
 # def find_top_score_smiles_eff_energy(model, eff_model, energy_model, device, train_prop, topk, atomic_num_list, model_dir):
@@ -637,7 +651,7 @@ if __name__ == '__main__':
         torch.save(property_model, property_model_path)
         print('Train and save model done! Time {:.2f} seconds'.format(time.time() - start))
     else:
-        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=True)
+        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=False)
         train_idx = [t for t in range(len(prop_list)) if t not in valid_idx]
         train_prop = [prop_list[i] for i in train_idx]
         valid_prop = [prop_list[i] for i in valid_idx]
@@ -679,7 +693,7 @@ if __name__ == '__main__':
 
             if args.topscore:
                 print('Finding lower score:')
-                find_lower_score_smiles(model, device, args.data_name, property_name, train_prop, args.topk, atomic_num_list, args.debug, args.model_dir, args.model_suffix)
+                find_lower_score_smiles(model, property_model, device, args.data_name, property_name, train_prop, args.topk, atomic_num_list, args.debug, args.model_dir, args.model_suffix)
 
             # if args.consopt:
             #     print('Constrained optimization:')

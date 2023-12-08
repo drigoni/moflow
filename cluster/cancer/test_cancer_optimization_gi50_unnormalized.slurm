@@ -60,14 +60,14 @@ echo ''
 cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/mflow/"
 
 
-srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
+srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \
                                         --hyperparams_path moflow-params.json \
-                                        --batch_size 128 \
-                                        --model_dir results/cancer_v2_128_22   \
+                                        --batch_size 256 \
+                                        --model_dir results/cancer_v2_512_4   \
                                         --gpu 0   \
                                         --data_name cancer   \
                                         --property_name AVERAGE_GI50 \
-                                        --topk 100  \
+                                        --topk 200  \
                                         --property_model_path average_gi50_big_model_unnormalized.pt \
                                         --debug false  \
                                         --topscore \

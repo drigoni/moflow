@@ -74,7 +74,7 @@ srun python train_model.py  --data_name cancer  \
                             --max_epochs 300 \
                             --gpu 0  \
                             --debug False  \
-                            --save_dir results/cancer_v2_512_$SLURM_ARRAY_TASK_ID \
+                            --save_dir results/cancer_v2_${BATCH_SIZE[$SLURM_ARRAY_TASK_ID]}_$SLURM_ARRAY_TASK_ID \
                             --b_n_flow ${B_N_FLOW[$SLURM_ARRAY_TASK_ID]}  \
                             --b_hidden_ch ${B_HIDDEN_CH[$SLURM_ARRAY_TASK_ID]}  \
                             --a_n_flow ${A_N_FLOW[$SLURM_ARRAY_TASK_ID]} \

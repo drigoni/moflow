@@ -8,7 +8,7 @@
 #SBATCH --output=cluster/out/MoFlow_cancer_v3_train_optimizer-norm.out
 #SBATCH --partition=gpu
 #SBATCH --mem=128G				                    # total memory per node
-#SBATCH --time=2-00:00:00                           # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=0-06:00:00                           # total run time limit (DD-HH:MM:SS)
 #SBATCH --nodes=1                                   # node count
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
 #SBATCH --cpus-per-task=64		                    # cpu-cores per task (>1 if multi-threaded tasks)
@@ -73,7 +73,7 @@ srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
                                         --temperature 1.0  \
                                         --property_name AVERAGE_GI50 \
                                         --norm_property \
-                                        --model_suffix _normalized2
+                                        --model_suffix _normalized
 
 # last default print
 echo 'Job done.'

@@ -8,7 +8,7 @@
 #SBATCH --output=cluster/out/MoFlow_cancer_v3_train_optimizer-unnorm.out
 #SBATCH --partition=gpu
 #SBATCH --mem=128G				                    # total memory per node
-#SBATCH --time=2-00:00:00                           # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=0-06:00:00                           # total run time limit (DD-HH:MM:SS)
 #SBATCH --nodes=1                                   # node count
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
 #SBATCH --cpus-per-task=64		                    # cpu-cores per task (>1 if multi-threaded tasks)
@@ -60,10 +60,10 @@ echo ''
 cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/mflow/"
 
 # just one experiment
-srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
+srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \
                                         --hyperparams_path moflow-params.json \
-                                        --batch_size 128 \
-                                        --model_dir results/cancer_v2_128_22   \
+                                        --batch_size 256 \
+                                        --model_dir results/cancer_v2_512_4   \
                                         --gpu 0 \
                                         --max_epochs 8  \
                                         --weight_decay 1e-3  \
@@ -71,7 +71,7 @@ srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
                                         --hidden 2048,1024,128,16  \
                                         --temperature 1.0  \
                                         --property_name AVERAGE_GI50 \
-                                        --model_suffix _unnormalized2
+                                        --model_suffix _unnormalized
 
 # last default print
 echo 'Job done.'

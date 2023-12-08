@@ -73,7 +73,7 @@ def construct_mol(x, A, atomic_num_list):
     # x (ch, num_node)
     atoms = np.argmax(x, axis=1)
     # last a
-    atoms_exist = atoms != len(atomic_num_list) - 1
+    atoms_exist = atoms != len(atomic_num_list) - 1 # last etom is a virtual node
     atoms = atoms[atoms_exist]
     # print('num atoms: {}'.format(sum(atoms>0)))
 
@@ -159,6 +159,9 @@ def valid_mol_can_with_seg(x, largest_connected_comp=True):
         vsm = [(s, len(s)) for s in sm.split('.')]  # 'C.CC.CCc1ccc(N)cc1CCC=O'.split('.')
         vsm.sort(key=lambda tup: tup[1], reverse=True)
         mol = Chem.MolFromSmiles(vsm[0][0])
+        # double check
+    sm = Chem.MolToSmiles(mol)
+    mol = Chem.MolFromSmiles(sm)
     return mol
 
 

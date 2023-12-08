@@ -8,7 +8,7 @@
 #SBATCH --output=cluster/out/MoFlow_cancer_v3_train_optimizer-%a.out
 #SBATCH --partition=gpu
 #SBATCH --mem=128G				                    # total memory per node
-#SBATCH --time=2-00:00:00                           # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=0-06:00:00                           # total run time limit (DD-HH:MM:SS)
 #SBATCH --nodes=1                                   # node count
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
 #SBATCH --cpus-per-task=64		                    # cpu-cores per task (>1 if multi-threaded tasks)

@@ -13,7 +13,7 @@
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
 #SBATCH --cpus-per-task=64		                    # cpu-cores per task (>1 if multi-threaded tasks)
 #SBATCH --gpus-per-node=1                           # number of gpus per node				
-#SBATCH --array=0-13
+#SBATCH --array=0-6
 
 
 ### ============ VARIABLES SETTING
@@ -62,30 +62,24 @@ cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/mflow/"
 
 
 # PROPERTY=(AVERAGE_GI50 AVERAGE_LC50 AVERAGE_IC50 AVERAGE_TGI) 
-NORMALIZATION=(true true true true true true true false false false false false false false)
-HIDDEN=(15000,4096,1024,128 \
-        1024,512,254,128,64,16,8,4 \
+NORMALIZATION=(false false false false false false false)
+HIDDEN=(1024,512,254,128,64,16,8,4 \
+        512,254,128,64,16,8,4 \
         2048,1024,128,16 \
         1024,64 \
         100,100,32 \
         100,10 \
         512,512,64 \
-        15000,4096,1024,128 \
-        1024,512,254,128,64,16,8,4 \
-        2048,1024,128,16 \
-        1024,64 \
-        100,100,32 \
-        100,10 \
-        512,512,64)
+)
 
         
 if [ ${NORMALIZATION[$SLURM_ARRAY_TASK_ID]} == true ]; 
 then
 echo 'Using Property Normalization'
-srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
+srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \
                                         --hyperparams_path moflow-params.json \
-                                        --batch_size 128 \
-                                        --model_dir results/cancer_v2_128_22   \
+                                        --batch_size 256 \
+                                        --model_dir results/cancer_v2_256_4   \
                                         --gpu 0 \
                                         --max_epochs 10  \
                                         --weight_decay 1e-3  \
@@ -93,20 +87,22 @@ srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
                                         --hidden ${HIDDEN[$SLURM_ARRAY_TASK_ID]}  \
                                         --temperature 1.0  \
                                         --property_name AVERAGE_GI50 \
-                                        --norm_property
+                                        --norm_property \
+                                        --model_suffix _normalized
 else
 echo 'Property NOT Normalized'
-srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_200  \
+srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \
                                         --hyperparams_path moflow-params.json \
-                                        --batch_size 128 \
-                                        --model_dir results/cancer_v2_128_22   \
+                                        --batch_size 256 \
+                                        --model_dir results/cancer_v2_256_4   \
                                         --gpu 0 \
                                         --max_epochs 10  \
                                         --weight_decay 1e-3  \
                                         --data_name cancer  \
                                         --hidden ${HIDDEN[$SLURM_ARRAY_TASK_ID]}  \
                                         --temperature 1.0  \
-                                        --property_name AVERAGE_GI50
+                                        --property_name AVERAGE_GI50 \
+                                        --model_suffix _unnormalized
 fi
 
 # last default print

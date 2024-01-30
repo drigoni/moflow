@@ -104,10 +104,10 @@ def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_datalo
 
     best_validation_score = 10^5
     best_model = None
-    training_loss = 0
     for epoch in range(max_epochs):
         print("Training epoch {}, Time: {}".format(epoch + 1, time.ctime()))
         model.train()
+        training_loss = 0
         for i, batch in enumerate(train_dataloader):
             x = batch[0].to(device)   # (bs,9,5)
             adj = batch[1].to(device)   # (bs,4,9, 9)
@@ -159,7 +159,7 @@ def fit_model(model, atomic_num_list, train_dataloader, train_prop, valid_datalo
         print('Valid loss: {:.7f} .'.format(mean_valid_loss))
         if mean_valid_loss < best_validation_score:
             best_validation_score = mean_valid_loss
-            best_model = (epoch, copy.deepcopy(model))
+            best_model = (epoch+1, copy.deepcopy(model))
     tr.print_summary()
     tr.end()
     print("[fit_model Ends], Start at {}, End at {}, Total {}".
@@ -196,7 +196,7 @@ def _normalize(df, col_name):
     #    df[col_name] = (df[col_name] - mn) / (mx-mn)
     #    return df
 
-def load_property_csv(normalize=True, add_clinic=False):
+def load_property_csv(normalize=False, add_clinic=False):
     filename = '../data/cancer_property.csv'
     df = pd.read_csv(filename)  # 
     df = df.drop(["qed", 'plogp'], axis=1) # ['AVERAGE_GI50', 'AVERAGE_LC50', 'AVERAGE_IC50', 'AVERAGE_TGI','smiles']
@@ -281,7 +281,7 @@ def find_lower_score_smiles(model, property_model, device, data_name, property_n
 
     # dump results
     f = open('{}/{}_{}_discovered_sorted{}.csv'.format(model_dir, data_name, property_name, model_suffix), "w")
-    f.write('{},{},{},{},{},{}\n'.format('New SMILES', 'Predicted Property', 'SAS', 'Weight', 'Original SILES', 'Similarity Score'))
+    f.write('{},{},{},{},{},{}\n'.format('New SMILES', 'Predicted Property', 'SAS', 'Weight', 'Starting SMILES', 'Similarity Score'))
     for r in result_list_novel:
         smile_new, predicted_property, smiles_original, similarity_score  = r= r
         mol = Chem.MolFromSmiles(smile_new)
@@ -651,7 +651,7 @@ if __name__ == '__main__':
         torch.save(property_model, property_model_path)
         print('Train and save model done! Time {:.2f} seconds'.format(time.time() - start))
     else:
-        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=False)
+        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=True)
         train_idx = [t for t in range(len(prop_list)) if t not in valid_idx]
         train_prop = [prop_list[i] for i in train_idx]
         valid_prop = [prop_list[i] for i in valid_idx]

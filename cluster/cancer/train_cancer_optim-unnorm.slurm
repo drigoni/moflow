@@ -63,12 +63,12 @@ cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/mflow/"
 srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \
                                         --hyperparams_path moflow-params.json \
                                         --batch_size 256 \
-                                        --model_dir results/cancer_v2_512_4   \
+                                        --model_dir results/cancer_v2_256_4   \
                                         --gpu 0 \
                                         --max_epochs 8  \
                                         --weight_decay 1e-3  \
                                         --data_name cancer  \
-                                        --hidden 2048,1024,128,16  \
+                                        --hidden 100,10  \
                                         --temperature 1.0  \
                                         --property_name AVERAGE_GI50 \
                                         --model_suffix _unnormalized

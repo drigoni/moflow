@@ -99,7 +99,9 @@ def construct_mol(x, A, atomic_num_list):
                 idx = atomid_valence[0]
                 v = atomid_valence[1]
                 an = mol.GetAtomWithIdx(idx).GetAtomicNum()
-                if an in (7, 8, 16) and (v - ATOM_VALENCY[an]) == 1:
+                # if an in (7, 8, 16) and (v - ATOM_VALENCY[an]) == 1:
+                #    mol.GetAtomWithIdx(idx).SetFormalCharge(1)
+                if an in (7, 16) and (v - ATOM_VALENCY[an]) == 1:
                     mol.GetAtomWithIdx(idx).SetFormalCharge(1)
     return mol
 

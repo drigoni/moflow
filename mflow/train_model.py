@@ -89,7 +89,7 @@ def train():
     args = parser.parse_args()
     # start wandb
     wandb.login(key='00144985e1d4b5bd78edc47bb88e8fc8bd1f46c0')
-    wandb.init(project="ProgettoCancro-moflow")
+    wandb.init(project="cancer_melanoma_skmel28")
 
     # Device configuration
     device = -1

@@ -4,11 +4,11 @@
 ### ============ SLURM COMMANDS
 #SBATCH --job-name='MoFlow_optimization-unnorm'     # create a short name for your job
 #SBATCH --mail-user=davide.rigoni.1@unipd.it
-#SBATCH --account=d2023d02-042-users
-#SBATCH --output=cluster/out/MoFlow_cancer_v2_optimization-unnorm.out
-#SBATCH --partition=gpu
+#SBATCH --account=IscrC_DL-MAM
+#SBATCH --output=./cluster/out/MoFlow_cancer_v2_optimization-unnorm.out
+#SBATCH --partition=boost_usr_prod
 #SBATCH --mem=32G				                    # total memory per node
-#SBATCH --time=2-00:00:00                           # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=0-05:00:00                           # total run time limit (DD-HH:MM:SS)
 #SBATCH --nodes=1                                   # node count
 #SBATCH --ntasks-per-node=1                         # total number of tasks per node
 #SBATCH --cpus-per-task=16		                    # cpu-cores per task (>1 if multi-threaded tasks)
@@ -57,7 +57,7 @@ nvidia-smi
 echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX "
 echo ''
 
-cd "/ceph/hpc/home/eudavider/repository/ProgettoCancro-moflow/mflow/"
+cd "/leonardo/home/userexternal/drigoni0/repositories/ProgettoCancro-moflow/mflow/"
 
 
 srun python optimize_cancer_property.py -snapshot model_snapshot_epoch_3  \

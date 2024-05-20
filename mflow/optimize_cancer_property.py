@@ -254,7 +254,7 @@ def find_lower_score_smiles(model, property_model, device, data_name, property_n
             print('Optimization {}/{}, time: {:.2f} seconds'.format(i, topk, time.time() - start_time))
         smile = r[-1] # last column is smile
         try:
-            results = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=100, # 100 default
+            results = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=10, # 100 default
                                       data_name=data_name, atomic_num_list=atomic_num_list,
                                       property_name=property_name, random=False, debug=debug)
         except:
@@ -264,20 +264,23 @@ def find_lower_score_smiles(model, property_model, device, data_name, property_n
 
     result_list.sort(key=lambda tup: tup[1], reverse=False)
 
-    # check novelty
-    list_of_training_smiles = set()
-    for i, r in enumerate(train_prop_sorted):
-        smile = r[-1] # last column is smile
-        list_of_training_smiles.add(smile)
-        mol = Chem.MolFromSmiles(smile)
-        smile2 = Chem.MolToSmiles(mol)
-        list_of_training_smiles.add(smile2)
+    # # check novelty
+    # list_of_training_smiles = set()
+    # for i, r in enumerate(train_prop_sorted):
+    #     smile = r[-1] # last column is smile
+    #     list_of_training_smiles.add(smile)
+    #     mol = Chem.MolFromSmiles(smile)
+    #     smile2 = Chem.MolToSmiles(mol)
+    #     list_of_training_smiles.add(smile2)
 
-    result_list_novel = []
-    for i, r in enumerate(result_list):
-        smile_new, predicted_property, smiles_original, similarity_score  = r
-        if smile_new not in list_of_training_smiles:
-            result_list_novel.append(r)
+    # result_list_novel = []
+    # for i, r in enumerate(result_list):
+    #     smile_new, predicted_property, smiles_original, similarity_score  = r
+    #     if smile_new not in list_of_training_smiles:
+    #         result_list_novel.append(r)
+
+    result_list_novel = result_list
+
 
     # dump results
     f = open('{}/{}_{}_discovered_sorted{}.csv'.format(model_dir, data_name, property_name, model_suffix), "w")
@@ -334,11 +337,7 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, mol_start_smiles, devi
     for step in range(num_iter):
         prop_val = property_model.propNN(cur_vec).squeeze()
         grad = torch.autograd.grad(prop_val, cur_vec)[0]
-        if random:
-            rad = torch.randn_like(cur_vec.data)
-            cur_vec = cur_vec.data - lr * rad / torch.sqrt(rad * rad)
-        else:
-            cur_vec = cur_vec.data - lr * grad.data / torch.sqrt(grad.data * grad.data)
+        cur_vec = cur_vec.data 
         cur_vec = cur_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(cur_vec, requires_grad=True).to(mol_vec)
         visited.append(cur_vec)
         prop_val = property_model.propNN(cur_vec).squeeze()
@@ -357,12 +356,7 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, mol_start_smiles, devi
 
     # removing repetitions
     results = []
-    smiles_set = set()
-    smiles_set.add(mol_start_smiles)
     for mol_end, mol_end_smiles, mol_end_predicted_prop in zip(valid_mols, valid_smiles, valid_properties):
-        if mol_end_smiles in smiles_set:
-            continue
-        smiles_set.add(mol_end_smiles)
         mol_end_fingerprint = AllChem.GetMorganFingerprint(mol_end, 2)
         sim = DataStructs.TanimotoSimilarity(mol_start_fingerprint, mol_end_fingerprint)
         if sim >= sim_cutoff:

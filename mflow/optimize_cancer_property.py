@@ -232,6 +232,19 @@ def load_property_csv(normalize=False, add_clinic=False):
     return tuples
 
 def find_lower_score_smiles(model, property_model, device, data_name, property_name, train_prop, topk, atomic_num_list, debug, model_dir, model_suffix):
+    # dump results
+    f = open('{}/validation.csv'.format(model_dir), "w")
+    f.write('{},{},{},{},{}\n'.format('AVERAGE_GI50', 'AVERAGE_LC50', 'AVERAGE_IC50', 'AVERAGE_TGI', 'SMILES' ))
+    all_GI50 = [r[0] for r in train_prop]
+    print("Average GI50: {}".format(np.mean(all_GI50)))
+    print("Variance GI50: {}".format(np.var(all_GI50)))
+    for r in train_prop:
+        AVERAGE_GI50, AVERAGE_LC50, AVERAGE_IC50, AVERAGE_TGI, SMILES = r
+        f.write('{},{},{},{},{}\n'.format(AVERAGE_GI50, AVERAGE_LC50, AVERAGE_IC50, AVERAGE_TGI, SMILES))
+        f.flush()
+    f.close()
+    print('Validation set dump done!')
+
     start_time = time.time()
     if property_name == 'AVERAGE_GI50':
         col = 0
@@ -248,13 +261,11 @@ def find_lower_score_smiles(model, property_model, device, data_name, property_n
     train_prop_sorted = list(sorted(train_prop, key=lambda tup: tup[col])) # for cancer properties lower is better
     result_list = []
     for i, r in enumerate(train_prop_sorted):
-        if i >= topk:
-            break
         if i % 10 == 0:
-            print('Optimization {}/{}, time: {:.2f} seconds'.format(i, topk, time.time() - start_time))
+            print('Optimization {}/{}, time: {:.2f} seconds'.format(i, len(train_prop_sorted), time.time() - start_time))
         smile = r[-1] # last column is smile
         try:
-            results = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=.005, num_iter=10, # 100 default
+            results = optimize_mol(model, property_model, smile, device, sim_cutoff=0, lr=0, num_iter=1, # 100 default
                                       data_name=data_name, atomic_num_list=atomic_num_list,
                                       property_name=property_name, random=False, debug=debug)
         except:
@@ -285,6 +296,9 @@ def find_lower_score_smiles(model, property_model, device, data_name, property_n
     # dump results
     f = open('{}/{}_{}_discovered_sorted{}.csv'.format(model_dir, data_name, property_name, model_suffix), "w")
     f.write('{},{},{},{},{},{}\n'.format('New SMILES', 'Predicted Property', 'SAS', 'Weight', 'Starting SMILES', 'Similarity Score'))
+    all_GI50 = [r[1] for r in result_list_novel]
+    print("Average GI50 new mol: {}".format(np.mean(all_GI50)))
+    print("Variance GI50 new mol: {}".format(np.var(all_GI50)))
     for r in result_list_novel:
         smile_new, predicted_property, smiles_original, similarity_score  = r= r
         mol = Chem.MolFromSmiles(smile_new)
@@ -335,8 +349,6 @@ def optimize_mol(model:MoFlow, property_model:MoFlowProp, mol_start_smiles, devi
     visited = []
     visited_prop = []
     for step in range(num_iter):
-        prop_val = property_model.propNN(cur_vec).squeeze()
-        grad = torch.autograd.grad(prop_val, cur_vec)[0]
         cur_vec = cur_vec.data 
         cur_vec = cur_vec.clone().detach().requires_grad_(True).to(device)  # torch.tensor(cur_vec, requires_grad=True).to(mol_vec)
         visited.append(cur_vec)
@@ -645,7 +657,7 @@ if __name__ == '__main__':
         torch.save(property_model, property_model_path)
         print('Train and save model done! Time {:.2f} seconds'.format(time.time() - start))
     else:
-        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=True)
+        prop_list = load_property_csv(normalize=args.norm_property, add_clinic=False)
         train_idx = [t for t in range(len(prop_list)) if t not in valid_idx]
         train_prop = [prop_list[i] for i in train_idx]
         valid_prop = [prop_list[i] for i in valid_idx]
@@ -687,7 +699,7 @@ if __name__ == '__main__':
 
             if args.topscore:
                 print('Finding lower score:')
-                find_lower_score_smiles(model, property_model, device, args.data_name, property_name, train_prop, args.topk, atomic_num_list, args.debug, args.model_dir, args.model_suffix)
+                find_lower_score_smiles(model, property_model, device, args.data_name, property_name, valid_prop, args.topk, atomic_num_list, args.debug, args.model_dir, args.model_suffix)
 
             # if args.consopt:
             #     print('Constrained optimization:')
